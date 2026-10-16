@@ -1,0 +1,31 @@
+FROM docker.io/library/debian:bookworm-slim
+
+# Release tag to install, e.g. v260907. Assets come from GitHub Releases.
+ARG VERSION=v260907
+ARG RELEASE_REPO=ltaoo/wx_channels_download
+ARG TARGETARCH
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
+      arm64) asset_arch=linux_arm64 ;; \
+      amd64) asset_arch=linux_x86_64 ;; \
+      *) echo "unsupported arch: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/wx.tar.gz \
+      "https://github.com/${RELEASE_REPO}/releases/download/${VERSION}/wx_video_download_${VERSION}_${asset_arch}.tar.gz"; \
+    tar -xzf /tmp/wx.tar.gz -C /usr/local/bin wx_video_download; \
+    chmod +x /usr/local/bin/wx_video_download; \
+    rm /tmp/wx.tar.gz
+
+ENV TZ=Asia/Shanghai \
+    WX_CHANNELS_DOWNLOAD_CONFIG_FILEPATH=/data/config.yaml
+
+VOLUME ["/data", "/downloads"]
+EXPOSE 2022 2023
+WORKDIR /data
+ENTRYPOINT ["/usr/local/bin/wx_video_download"]
+CMD ["-c", "/data/config.yaml"]

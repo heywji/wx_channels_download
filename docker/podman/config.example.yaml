@@ -1,0 +1,121 @@
+debug:
+  error: false
+  echolog: false
+
+workdir: "/data"
+
+download:
+  filenameTemplate: "{{filename}}_{{spec}}"
+  dir: "/downloads"
+  playDoneAudio: false
+  defaultActionWhenExisting: ""
+  maxRunning: 3
+  resourceConcurrency: 100
+  segmentConcurrency: 10
+  connectionConcurrency: 0 # 0 derives resourceConcurrency * segmentConcurrency
+  remoteServer:
+    enabled: false
+    protocol: "http"
+    hostname: "192.168.1.2"
+    port: 2022
+
+api:
+  protocol: "http"
+  hostname: "0.0.0.0"
+  port: 2022
+
+mcp:
+  enabled: false
+
+scraper:
+  retainedJobs: 20
+
+db:
+  type: "sqlite"
+  host: ""
+  port: ""
+  username: ""
+  password: ""
+  filename: ""
+  filepath: "/data/data.db"
+
+proxy:
+  enabled: true
+  system: false
+  hostname: "0.0.0.0"
+  port: 2023
+  tcpRelay:
+    enabled: false
+    hostname: "127.0.0.1"
+    port: 9900
+  tun: false
+  defaultInterface: ""
+  skipInstallRootCert: true
+  upstreamProxy: ""
+
+cookie:
+  uuid: ""
+  password: ""
+  key: ""
+
+update:
+  sources:
+    - type: github
+      priority: 1
+      github_repo: ltaoo/wx_channels_download
+      github_token: ""
+      manifest_url: ""
+      self_url: ""
+      enabled: true
+      need_check_checksum: false
+  proxy: ""
+  mirror: ""
+
+channels:
+  disableLocationToHome: false
+  download:
+    defaultHighest: false
+    frontend: false
+    cover: false
+    pauseWhenDownload: false
+    forceCheckAllFeeds: false
+
+mp:
+  remoteServer:
+    protocol: "http"
+    hostname: ""
+    port: 80
+  refreshToken: "wx_channels_download"
+  tokenFilepath: ""
+  refreshSkipMinutes: 20
+  maxWebsocketClients: 5
+
+cloudflare:
+  accountId: ""
+  apiToken: ""
+  refreshToken: "wx_channels_download"
+  adminToken: ""
+  workerName: "mp-rss-api"
+  d1Name: "mp-rss-db"
+  sphWorkerName: "sph"
+  sphCookie: ""
+  sphCredential: ""
+
+bridge:
+  deploy:
+    workerName: "dm-bridge"
+    pagesProjectName: ""
+    token: ""
+    adminToken: ""
+  enabled: false
+  url: "https://dm-bridge.example.workers.dev"
+  deviceId: ""
+  deviceName: ""
+  token: ""
+  httpTimeoutSeconds: 30
+  methods: "auto"
+
+cert:
+  file: "/data/certs/wx_channels_download.crt"
+  key: "/data/certs/wx_channels_download.key"
+  name: "wx_channels_download_local"
