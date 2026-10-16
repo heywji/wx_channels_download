@@ -88,15 +88,21 @@ while :; do
     [ -f "\$f" ] || continue
     { IFS= read -r t; IFS= read -r s; IFS= read -r m; IFS= read -r snd; IFS= read -r u; } < "\$f"
     rm -f "\$f"
+    # terminal-notifier exits non-zero when macOS denies it notification
+    # permission; fall back to osascript so the alert still shows (no click-to-play).
+    ok=1
     if command -v terminal-notifier >/dev/null 2>&1; then
       if [ -n "\$u" ]; then
-        terminal-notifier -title "\$t" -subtitle "\$s" -message "\$m" -sound "\$snd" -open "\$u" >/dev/null 2>&1
+        terminal-notifier -title "\$t" -subtitle "\$s" -message "\$m" -sound "\$snd" -open "\$u" >/dev/null 2>&1 && ok=0
       else
-        terminal-notifier -title "\$t" -subtitle "\$s" -message "\$m" -sound "\$snd" >/dev/null 2>&1
+        terminal-notifier -title "\$t" -subtitle "\$s" -message "\$m" -sound "\$snd" >/dev/null 2>&1 && ok=0
       fi
-    else
+      [ \$ok = 0 ] || echo "\$(date '+%F %T') terminal-notifier refused (allow it in System Settings > Notifications), using osascript"
+    fi
+    if [ \$ok != 0 ]; then
       osascript -e 'on run argv' -e 'display notification (item 3 of argv) with title (item 1 of argv) subtitle (item 2 of argv) sound name (item 4 of argv)' -e 'end run' "\$t" "\$s" "\$m" "\$snd" >/dev/null 2>&1
     fi
+    echo "\$(date '+%F %T') notified: \$s"
   done
   sleep 2
 done

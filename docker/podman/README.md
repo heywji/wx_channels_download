@@ -108,7 +108,7 @@ SQLite 以 WAL 模式写入时，不要让它跨虚拟机放在 bind mount 上�
 | 现象 | 检查 |
 |---|---|
 | 刷视频没有任何反应 | 用 `scutil --proxy` 看系统代理是不是 `127.0.0.1:2023`；微信有没有 ⌘Q 完全重开；`api/channels/status` 是不是 `available:true` |
-| 有下载但没有通知 | `ls ~/Library/Caches/wx-channels` 里有没有积压的文件；看 `/tmp/wx-channels-agent.log`；在系统设置里确认允许 terminal-notifier 发通知 |
+| 有下载但没有通知 | 看 `/tmp/wx-channels-agent.log`：出现 `terminal-notifier refused` 说明 macOS 没允许 terminal-notifier 发通知，这时会改用 osascript 弹（不能点击播放）。到「系统设置 → 通知 → terminal-notifier」打开「允许通知」即可恢复；osascript 的通知也没出现的话，检查「脚本编辑器」的通知权限和专注模式 |
 | 其他网站打不开 | 看 LaunchAgent 日志；按「暂停」那条命令关掉代理 |
 | `podman` 连不上 | `podman machine start` |
 
