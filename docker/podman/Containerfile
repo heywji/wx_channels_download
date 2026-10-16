@@ -6,7 +6,7 @@ ARG RELEASE_REPO=ltaoo/wx_channels_download
 ARG TARGETARCH
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates tzdata curl \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata curl openssl python3 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN set -eux; \
@@ -21,11 +21,19 @@ RUN set -eux; \
     chmod +x /usr/local/bin/wx_video_download; \
     rm /tmp/wx.tar.gz
 
+COPY config.example.yaml /usr/local/share/wx_channels/config.example.yaml
+COPY wxdl.py entrypoint.sh /usr/local/share/wx_channels/
+RUN chmod +x /usr/local/share/wx_channels/entrypoint.sh
+
 ENV TZ=Asia/Shanghai \
-    WX_CHANNELS_DOWNLOAD_CONFIG_FILEPATH=/data/config.yaml
+    WX_CHANNELS_DOWNLOAD_CONFIG_FILEPATH=/data/config.yaml \
+    DOWNLOAD_DIR=/downloads \
+    STATE=/data/autodl_state.json \
+    NOTIFY_DIR=/notify \
+    AUTODL=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
 VOLUME ["/data", "/downloads"]
 EXPOSE 2022 2023
 WORKDIR /data
-ENTRYPOINT ["/usr/local/bin/wx_video_download"]
-CMD ["-c", "/data/config.yaml"]
+ENTRYPOINT ["/usr/local/share/wx_channels/entrypoint.sh"]

@@ -13,7 +13,9 @@ A file without the .part suffix is always complete.
   wxdl.py watch                     download every newly watched video
 
 Env: API (default http://127.0.0.1:2022), DOWNLOAD_DIR (default ~/Downloads),
-STATE (watch state file, default ./data/autodl_state.json next to this file).
+STATE (watch state file, default ./data/autodl_state.json next to this file),
+NOTIFY_DIR (queue notifications as files for a host agent instead of posting),
+HOST_DOWNLOAD_DIR / HOST_HOME (host paths, when running in a container).
 Python 3.9+, standard library only.
 """
 
@@ -132,27 +134,70 @@ def looks_like_video(path):
         return f.read(8)[4:8] == b"ftyp"
 
 
-def notify(title, message, sound, open_path=None):
+def video_name(item):
+    """Human-readable "author：title" for notifications."""
+    author, title = author_of(item), one_line(item.get("title"))
+    head = title.split("#", 1)[0].strip() or title or item.get("external_id", "")
+    name = f"{author}：{head}" if author else head
+    return name if len(name) <= 80 else name[:79] + "…"
+
+
+def host_path(out):
+    """Path of a downloaded file as the macOS host sees it.
+
+    Inside the container DOWNLOAD_DIR is a bind mount; HOST_DOWNLOAD_DIR is
+    where it lives on the host.
+    """
+    host_dir = os.environ.get("HOST_DOWNLOAD_DIR")
+    if host_dir:
+        return Path(host_dir) / Path(out).relative_to(DOWNLOAD_DIR)
+    return Path(out).resolve()
+
+
+def tilde(path):
+    s = str(path)
+    home = os.environ.get("HOST_HOME") or str(Path.home())
+    return "~" + s[len(home):] if s.startswith(home.rstrip("/") + "/") else s
+
+
+def notify(ok, item, message, out=None):
+    """Post "下载完成/失败" with the video name; clicking a success plays it.
+
+    In the container (NOTIFY_DIR set) the notification is queued as a file in
+    NOTIFY_DIR for the host agent to post. Format, one field per line:
+    title, subtitle, message, sound, URL to open on click (may be empty).
+    """
+    title = "✅ 视频号下载完成" if ok else "❌ 视频号下载失败"
+    subtitle = video_name(item) if item else ""
+    sound = "Glass" if ok else "Basso"
+    open_url = host_path(out).as_uri() if out else ""
+    fields = [title, subtitle, message, sound, open_url]
+    fields = [re.sub(r"[\r\n]+", " ", f) for f in fields]
+
+    notify_dir = os.environ.get("NOTIFY_DIR")
+    if notify_dir:
+        qdir = Path(notify_dir)
+        qdir.mkdir(parents=True, exist_ok=True)
+        stem = f"{time.time_ns()}-{(item or {}).get('external_id', 'x')}"
+        tmp = qdir / f".{stem}.tmp"
+        tmp.write_text("\n".join(fields) + "\n", encoding="utf-8")
+        tmp.rename(qdir / f"{stem}.notify")
+        return
     if sys.platform != "darwin":
         return
     if shutil.which("terminal-notifier"):
-        cmd = ["terminal-notifier", "-title", title, "-message", message, "-sound", sound]
-        if open_path:
-            cmd += ["-open", Path(open_path).resolve().as_uri()]
+        cmd = ["terminal-notifier", "-title", title, "-subtitle", subtitle, "-message", message, "-sound", sound]
+        if open_url:
+            cmd += ["-open", open_url]
         if subprocess.run(cmd, capture_output=True).returncode == 0:
             return
     # Fallback without click action; argv avoids quoting issues with titles.
     subprocess.run(
         ["osascript", "-e", "on run argv",
-         "-e", "display notification (item 2 of argv) with title (item 1 of argv) sound name (item 3 of argv)",
-         "-e", "end run", title, message, sound],
+         "-e", "display notification (item 2 of argv) with title (item 1 of argv) subtitle (item 3 of argv) sound name (item 4 of argv)",
+         "-e", "end run", title, message, subtitle, sound],
         capture_output=True,
     )
-
-
-def tilde(path):
-    s, home = str(path), str(Path.home())
-    return "~" + s[len(home):] if s.startswith(home + os.sep) else s
 
 
 def download(item, progress=True):
@@ -199,7 +244,7 @@ def download(item, progress=True):
         part.unlink(missing_ok=True)
         raise
     log(f"✓ 完成：{out}")
-    notify("视频号下载完成，点击播放", f"已保存到 {tilde(out)}", "Glass", out)
+    notify(True, item, f"已保存到 {tilde(host_path(out))} · 点击播放", out)
     return out
 
 
@@ -228,7 +273,7 @@ def cmd_pick(args):
     try:
         out = download(item)
     except DownloadError as e:
-        notify("视频号下载失败", str(e), "Basso")
+        notify(False, item, str(e))
         sys.exit(f"✗ {e}")
     if args.r and sys.platform == "darwin":
         subprocess.run(["open", "-R", str(out)])
@@ -302,7 +347,7 @@ def cmd_watch(_args):
                 log(f"✗ {eid}: {e} (attempt {attempts})")
                 if attempts >= MAX_ATTEMPTS or "签名过期" in str(e):
                     state["items"][eid]["attempts"] = MAX_ATTEMPTS
-                    notify("视频号下载失败", f"{file_stem(it)}：{e}", "Basso")
+                    notify(False, it, str(e))
             except Exception as e:  # network hiccup: retry next round
                 attempts = rec.get("attempts", 0) + 1
                 state["items"][eid] = {"status": "failed", "seen": seen, "attempts": attempts, "error": repr(e)}
