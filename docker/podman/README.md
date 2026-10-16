@@ -22,6 +22,7 @@
 | `gen-cert.sh` | 生成本机专属根证书，放到 `data/certs/`；在 macOS 上还会把它加入系统钥匙串并设为信任 |
 | `run.sh` | 启动或重启容器；在 macOS 上会把系统代理指向 `127.0.0.1:2023` |
 | `stop.sh` | 停掉容器，并关闭系统代理 |
+| `dl.sh` | 下载在微信里打开过的视频：自动选最高画质，校验后通知 |
 | `data/` | 运行时数据：配置、证书私钥、SQLite。**已在 `.gitignore` 里忽略，不要提交** |
 
 容器里的挂载：`/data` 对应 `./data`，`/downloads` 对应 `$DOWNLOAD_DIR`（默认是 `~/Downloads`）。
@@ -39,7 +40,7 @@ podman build -t localhost/wx-channels-download:v260907 --build-arg VERSION=v2609
 
 1. **⌘Q 完全退出微信再重新打开**，不然微信不会走新的系统代理。
 2. 在微信里打开视频号的视频。分享链接 `https://weixin.qq.com/sph/xxx` 可以先发到「文件传输助手」再点开。
-3. 点页面里的下载按钮。如果按钮没出现，按下面「手动下载」操作。
+3. 点页面里的下载按钮。如果按钮没出现，用下面的 `dl.sh` 下载。
 
 不用的时候运行 `./stop.sh`。
 
@@ -54,7 +55,28 @@ podman build -t localhost/wx-channels-download:v260907 --build-arg VERSION=v2609
 
 `config.example.yaml` 和直接在宿主机上运行时的配置不同：`proxy.system: false`（容器没法改宿主机的系统代理，由 `run.sh` 来设）、`proxy.skipInstallRootCert: true`（证书由 `gen-cert.sh` 负责信任）、`proxy.hostname` / `api.hostname` 都是 `0.0.0.0`（要监听所有地址，宿主机的端口映射才能连进来）。
 
-## 手动下载（按钮不出现时）
+## 下载视频：`dl.sh`（推荐）
+
+目前页面上的按钮不太可靠，推荐用 `dl.sh`。先在微信里打开要下载的视频，然后运行：
+
+```sh
+./dl.sh          # 列出最近打开过的视频，按序号选择，回车默认选第 1 个
+./dl.sh 1        # 不提示，直接下载最近打开的那个
+./dl.sh -r 2     # 下载第 2 个，完成后在 Finder 里定位到文件
+./dl.sh -n 20    # 列出最近 20 个
+```
+
+它会做这些事：
+- 自动选最高画质：逐个探测各档的文件大小，挑最大的那档。
+- 先下载到 `<作者>_<标题>.mp4.part`，校验通过后（字节数对得上，`ffprobe` 能识别成视频），再改名成 `.mp4`。
+  **所以文件名不是 `.part` 结尾，就说明已经完整下完了。**
+- 完成后弹出 macOS 通知，带 Glass 提示音；失败时也会弹通知，用 Basso 提示音，同时删掉 `.part` 文件。
+  这个通知是用 `osascript` 发的，点击它不会跳到文件，想自动在 Finder 里定位就加 `-r`。
+- 如果提示「视频地址已失效」，说明视频地址里的签名过期了，在微信里重新打开一次这个视频再运行即可。
+
+可以用环境变量调整：`DB`、`API`（默认 `http://127.0.0.1:2022`）、`DOWNLOAD_DIR`（默认 `~/Downloads`）。
+
+## 手动下载（不用 dl.sh 时）
 
 微信前端改版后，插入的脚本可能匹配不上（例如报 `finderGetCommentDetail is not a function`）。
 不过只要在微信里打开过视频，地址和 key 就会记到 `data/data.db` 的 `browse_history` 表里，可以直接取出来下载：
