@@ -128,5 +128,19 @@ EOF
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$PLIST"
 
-command -v terminal-notifier >/dev/null 2>&1 || echo "tip: brew install terminal-notifier (click a notification to play the video)"
+if command -v terminal-notifier >/dev/null 2>&1; then
+  # brew's terminal-notifier is ad-hoc signed and not registered with
+  # LaunchServices, so macOS never lists it under Notifications and silently
+  # refuses it. Register it and launch it once so it shows up there.
+  TN_APP="$(cd "$(dirname "$(readlink -f "$(command -v terminal-notifier)")")/.." && pwd)/terminal-notifier.app"
+  [ -d "$TN_APP" ] || TN_APP="$(brew --prefix terminal-notifier 2>/dev/null)/terminal-notifier.app"
+  if [ -d "$TN_APP" ]; then
+    /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$TN_APP"
+    open -a "$TN_APP" --args -message "wx_channels_download installed" || true
+  fi
+  terminal-notifier -message "wx_channels_download installed" >/dev/null 2>&1 \
+    || echo "action: System Settings > Notifications > terminal-notifier > Allow notifications (otherwise clicking a notification won't play the video)"
+else
+  echo "tip: brew install terminal-notifier (click a notification to play the video)"
+fi
 echo "done: container $CTR ($MEMORY), agent $PLIST"
