@@ -22,7 +22,9 @@
 | `gen-cert.sh` | 生成本机专属根证书，放到 `data/certs/`；在 macOS 上还会把它加入系统钥匙串并设为信任 |
 | `run.sh` | 启动或重启容器；在 macOS 上会把系统代理指向 `127.0.0.1:2023` |
 | `stop.sh` | 停掉容器，并关闭系统代理 |
-| `dl.sh` | 下载在微信里打开过的视频：自动选最高画质，校验后通知 |
+| `autodl.sh` | 安装或卸载自动下载的后台服务（launchd），以及查看状态和日志 |
+| `dl.sh` | 从最近看过的视频里挑一个手动下载 |
+| `wxdl.py` | 前两者共用的下载逻辑：选最高画质、校验、发通知 |
 | `data/` | 运行时数据：配置、证书私钥、SQLite。**已在 `.gitignore` 里忽略，不要提交** |
 
 容器里的挂载：`/data` 对应 `./data`，`/downloads` 对应 `$DOWNLOAD_DIR`（默认是 `~/Downloads`）。
@@ -40,7 +42,7 @@ podman build -t localhost/wx-channels-download:v260907 --build-arg VERSION=v2609
 
 1. **⌘Q 完全退出微信再重新打开**，不然微信不会走新的系统代理。
 2. 在微信里打开视频号的视频。分享链接 `https://weixin.qq.com/sph/xxx` 可以先发到「文件传输助手」再点开。
-3. 点页面里的下载按钮。如果按钮没出现，用下面的 `dl.sh` 下载。
+3. 点页面里的下载按钮。如果按钮没出现，用下面的 `autodl.sh` 或 `dl.sh` 下载。
 
 不用的时候运行 `./stop.sh`。
 
@@ -55,30 +57,47 @@ podman build -t localhost/wx-channels-download:v260907 --build-arg VERSION=v2609
 
 `config.example.yaml` 和直接在宿主机上运行时的配置不同：`proxy.system: false`（容器没法改宿主机的系统代理，由 `run.sh` 来设）、`proxy.skipInstallRootCert: true`（证书由 `gen-cert.sh` 负责信任）、`proxy.hostname` / `api.hostname` 都是 `0.0.0.0`（要监听所有地址，宿主机的端口映射才能连进来）。
 
-## 下载视频：`dl.sh`（推荐）
+## 自动下载：`autodl.sh`（推荐）
 
-目前页面上的按钮不太可靠，推荐用 `dl.sh`。先在微信里打开要下载的视频，然后运行：
+装好以后就是全自动的：**在微信里看到的每一个视频**（包括首页推荐里刷到的）都会自动下载最高画质到 `~/Downloads`，每下完一个就弹一条通知。
 
 ```sh
-./dl.sh          # 列出最近打开过的视频，按序号选择，回车默认选第 1 个
-./dl.sh 1        # 不提示，直接下载最近打开的那个
+./autodl.sh install     # 安装成 launchd 后台服务：登录后自动启动，进程退出会被自动拉起
+./autodl.sh status      # 看服务是否在运行
+./autodl.sh log         # 实时查看日志（data/autodl.log）
+./autodl.sh uninstall   # 关掉自动下载
+```
+
+- 原理：插入页面的脚本会把每个显示过的视频（地址和解密 key）记进浏览记录。`wxdl.py watch` 每 3 秒通过 API（`POST /api/browse_history/list`）拉一次列表，发现新视频就下载。
+  它不会直接去读 `data.db`，因为数据库由容器里的程序在写，跨虚拟机直接读写 SQLite 的 WAL 文件不安全。
+- 已经下载过的视频记在 `data/autodl_state.json` 里，不会重复下载。
+- 第一次启动时，只处理最近 2 小时内看过的视频，不会去下更早的历史记录。
+- 下载失败时：遇到网络问题会自动重试，最多 3 次；遇到「签名过期」会弹失败通知，在微信里重新打开这个视频就会再试一次。
+- 容器没运行时它会静静地等着，容器起来后自动继续，不会刷屏报错。
+- 注意：刷得越多，下得越多。不想要了就运行 `./autodl.sh uninstall`。
+
+## 手动挑一个下载：`dl.sh`
+
+```sh
+./dl.sh          # 列出最近看过的视频，按序号选择，回车默认选第 1 个
+./dl.sh 1        # 不提示，直接下载最近看的那个
 ./dl.sh -r 2     # 下载第 2 个，完成后在 Finder 里定位到文件
 ./dl.sh -n 20    # 列出最近 20 个
 ```
 
-它会做这些事：
+## 自动和手动下载的共同行为
+
 - 自动选最高画质：逐个探测各档的文件大小，挑最大的那档。
 - 先下载到 `<作者>_<标题>.mp4.part`，校验通过后（字节数对得上，`ffprobe` 能识别成视频），再改名成 `.mp4`。
   **所以文件名不是 `.part` 结尾，就说明已经完整下完了。**
 - 完成后弹出 macOS 通知，带 Glass 提示音，通知里会写文件保存在哪里（例如 `已保存到 ~/Downloads/xxx.mp4`），**点击通知就会用默认播放器打开这个视频**。
-  失败时也会弹通知，用 Basso 提示音，同时删掉 `.part` 文件。想下完自动在 Finder 里定位文件，加 `-r`。
+  失败时也会弹通知，用 Basso 提示音，同时删掉 `.part` 文件。
 - 点击打开视频需要先装 `terminal-notifier`：`brew install terminal-notifier`。第一次弹通知时，macOS 会问要不要允许它发通知，选允许。
   没装的话会退回用 `osascript` 发通知：一样会显示保存位置，但点击没有反应。
-- 如果提示「视频地址已失效」，说明视频地址里的签名过期了，在微信里重新打开一次这个视频再运行即可。
+- 可以用环境变量调整：`API`（默认 `http://127.0.0.1:2022`）、`DOWNLOAD_DIR`（默认 `~/Downloads`）。
+- 依赖：python3（3.9 以上，只用标准库）；`ffprobe` 可选，用来校验视频。
 
-可以用环境变量调整：`DB`、`API`（默认 `http://127.0.0.1:2022`）、`DOWNLOAD_DIR`（默认 `~/Downloads`）。
-
-## 手动下载（不用 dl.sh 时）
+## 手动用 curl 下载（排障用）
 
 微信前端改版后，插入的脚本可能匹配不上（例如报 `finderGetCommentDetail is not a function`）。
 不过只要在微信里打开过视频，地址和 key 就会记到 `data/data.db` 的 `browse_history` 表里，可以直接取出来下载：
