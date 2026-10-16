@@ -70,8 +70,10 @@ podman build -t localhost/wx-channels-download:v260907 --build-arg VERSION=v2609
 - 自动选最高画质：逐个探测各档的文件大小，挑最大的那档。
 - 先下载到 `<作者>_<标题>.mp4.part`，校验通过后（字节数对得上，`ffprobe` 能识别成视频），再改名成 `.mp4`。
   **所以文件名不是 `.part` 结尾，就说明已经完整下完了。**
-- 完成后弹出 macOS 通知，带 Glass 提示音；失败时也会弹通知，用 Basso 提示音，同时删掉 `.part` 文件。
-  这个通知是用 `osascript` 发的，点击它不会跳到文件，想自动在 Finder 里定位就加 `-r`。
+- 完成后弹出 macOS 通知，带 Glass 提示音，通知里会写文件保存在哪里（例如 `已保存到 ~/Downloads/xxx.mp4`），**点击通知就会用默认播放器打开这个视频**。
+  失败时也会弹通知，用 Basso 提示音，同时删掉 `.part` 文件。想下完自动在 Finder 里定位文件，加 `-r`。
+- 点击打开视频需要先装 `terminal-notifier`：`brew install terminal-notifier`。第一次弹通知时，macOS 会问要不要允许它发通知，选允许。
+  没装的话会退回用 `osascript` 发通知：一样会显示保存位置，但点击没有反应。
 - 如果提示「视频地址已失效」，说明视频地址里的签名过期了，在微信里重新打开一次这个视频再运行即可。
 
 可以用环境变量调整：`DB`、`API`（默认 `http://127.0.0.1:2022`）、`DOWNLOAD_DIR`（默认 `~/Downloads`）。

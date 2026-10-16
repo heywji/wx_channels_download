@@ -4,7 +4,8 @@
 # Reads the video URL and decode key from browse_history in data/data.db,
 # downloads through the API's /play endpoint (which decrypts on the fly) into
 # "<name>.mp4.part", verifies it, renames it to "<name>.mp4", then posts a
-# macOS notification. A file without the .part suffix is always complete.
+# macOS notification showing where it was saved; with terminal-notifier
+# installed, clicking it plays the video. A file without .part is complete.
 #
 # Usage: ./dl.sh [-r] [-n COUNT] [INDEX]
 #   INDEX     pick the INDEX-th most recent video without prompting (1 = latest)
@@ -26,15 +27,27 @@ while getopts "rn:h" opt; do
   case "$opt" in
     r) reveal=1 ;;
     n) count="$OPTARG" ;;
-    *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    *) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
   esac
 done
 shift $((OPTIND - 1))
 pick="${1:-}"
 
 notify() {
-  # notify TITLE MESSAGE SOUND; argv avoids quoting issues with video titles.
+  # notify TITLE MESSAGE SOUND [FILE]
+  # With terminal-notifier (brew install terminal-notifier), clicking the
+  # notification opens FILE; plain osascript notifications cannot do that.
   [ "$(uname)" = "Darwin" ] || return 0
+  if command -v terminal-notifier >/dev/null 2>&1; then
+    set -- "$1" "$2" "$3" "${4:-}"
+    if [ -n "$4" ]; then
+      terminal-notifier -title "$1" -message "$2" -sound "$3" -group wx-channels-dl \
+        -open "$(python3 -I -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).resolve().as_uri())' "$4")" \
+        >/dev/null 2>&1 && return 0
+    else
+      terminal-notifier -title "$1" -message "$2" -sound "$3" -group wx-channels-dl >/dev/null 2>&1 && return 0
+    fi
+  fi
   osascript -e 'on run argv' \
     -e 'display notification (item 2 of argv) with title (item 1 of argv) sound name (item 3 of argv)' \
     -e 'end run' "$1" "$2" "$3" >/dev/null 2>&1 || true
@@ -135,6 +148,6 @@ fi
 mv "$part" "$out"
 trap - EXIT
 echo "✓ 完成：$out"
-notify "视频号下载完成" "$(basename "$out")" "Glass"
+notify "视频号下载完成，点击播放" "已保存到 ${out/#$HOME/~}" "Glass" "$out"
 [ "$reveal" -eq 1 ] && [ "$(uname)" = "Darwin" ] && open -R "$out"
 exit 0
